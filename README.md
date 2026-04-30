@@ -1,4 +1,4 @@
-# app_v03.1
+# app_v0.3.3
 Sistema de geração inteligente de jogos da Lotofácil com Machine Learning e otimização
 # 🎯 Lotofácil IA - Gerador Inteligente com Machine Learning
 
