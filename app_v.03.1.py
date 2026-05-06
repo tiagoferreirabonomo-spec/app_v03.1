@@ -1,6 +1,4 @@
-# =========================================================
-# LOTOFACIL IA HIBRIDA - v0.3.3 (100 COMBINACOES OTIMIZADO)
-# =========================================================
+# LOTOFACIL IA v0.5.1
 
 import streamlit as st
 import pandas as pd
@@ -8,165 +6,132 @@ import numpy as np
 import random
 import plotly.express as px
 from xgboost import XGBClassifier
+from sklearn.cluster import KMeans
 
 st.set_page_config(layout="wide")
 
-# =============================
-# UPLOAD DO ARQUIVO
-# =============================
-uploaded_file = st.file_uploader("Envie o arquivo Lotofacil.xlsx", type=["xlsx"])
+uploaded_file = st.file_uploader("Envie Lotofacil.xlsx", type=["xlsx"])
 
 if uploaded_file is None:
     st.warning("Envie o arquivo para continuar")
     st.stop()
 
-# =============================
-# DADOS
-# =============================
-@st.cache_data
-def carregar(uploaded_file):
-    df = pd.read_excel(uploaded_file)
-    bolas = df[[f"Bola{i}" for i in range(1, 16)]]
-    return df, bolas
+df = pd.read_excel(uploaded_file)
+bolas = df[[f"Bola{i}" for i in range(1,16)]]
 
-df, bolas = carregar(uploaded_file)
+primos = {2,3,5,7,11,13,17,19,23}
+moldura = {1,2,3,4,5,6,10,11,15,16,20,21,22,23,24,25}
 
-# =============================
-# MATRIZ BINARIA
-# =============================
-def matriz_binaria():
+def features_jogo(jogo):
+    return {
+        "soma": sum(jogo),
+        "pares": sum(1 for n in jogo if n%2==0),
+        "primos": sum(1 for n in jogo if n in primos),
+        "mult3": sum(1 for n in jogo if n%3==0),
+        "moldura": sum(1 for n in jogo if n in moldura)
+    }
+
+def matriz():
     m = pd.DataFrame(0, index=bolas.index, columns=range(1,26))
     for i,row in bolas.iterrows():
         for n in row:
             m.at[i,n]=1
     return m
 
-matriz = matriz_binaria()
+mat = matriz()
 
-# =============================
-# MODELO
-# =============================
 @st.cache_resource
 def treinar():
     modelos={}
-    X = matriz.shift(1).fillna(0)
+    X = mat.shift(1).fillna(0)
     for n in range(1,26):
         model = XGBClassifier(eval_metric='logloss')
-        model.fit(X, matriz[n])
+        model.fit(X, mat[n])
         modelos[n]=model
     return modelos
 
 def probabilidades(modelos):
-    ultimo = matriz.iloc[-1].values.reshape(1,-1)
-    return {n:modelos[n].predict_proba(ultimo)[0][1] for n in range(1,26)}
+    ult = mat.iloc[-1].values.reshape(1,-1)
+    return {n:modelos[n].predict_proba(ult)[0][1] for n in range(1,26)}
 
-# =============================
-# HISTORICO
-# =============================
-historico = set(tuple(sorted(row)) for row in bolas.values)
+ultimo = set(bolas.iloc[-1].values)
 
-# =============================
-# SCORE
-# =============================
 def score(jogo, probs):
-    return sum(probs[n] for n in jogo)
+    base = sum(probs[n] for n in jogo)
+    f = features_jogo(jogo)
+    bonus = 0
+    if 180 <= f["soma"] <= 220:
+        bonus += 1
+    if 6 <= f["pares"] <= 9:
+        bonus += 1
+    repet = len(set(jogo) & ultimo)
+    if 8 <= repet <= 10:
+        bonus += 2
+    return base + bonus
 
-# =============================
-# GENETICO
-# =============================
-def crossover(p1, p2):
-    corte = random.randint(5,10)
-    filho = list(set(p1[:corte] + p2[corte:]))
+historico = set(tuple(sorted(r)) for r in bolas.values)
 
-    while len(filho) < 15:
-        filho.append(random.randint(1,25))
-        filho = list(set(filho))
+def gerar(qtd, probs):
+    jogos=[]
+    usados=set()
+    while len(jogos)<qtd:
+        jogo = tuple(sorted(random.sample(range(1,26),15)))
+        if jogo in historico or jogo in usados:
+            continue
+        f = features_jogo(jogo)
+        if not (180 <= f["soma"] <= 220):
+            continue
+        jogos.append((jogo, score(jogo, probs)))
+        usados.add(jogo)
+    jogos.sort(key=lambda x: x[1], reverse=True)
+    return jogos
 
-    return tuple(sorted(filho[:15]))
+def clusterizar(jogos, qtd_final, k=10):
+    X = [[1 if i in j else 0 for i in range(1,26)] for j,_ in jogos]
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    labels = kmeans.fit_predict(X)
 
-def mutacao(jogo):
-    jogo = list(jogo)
-    jogo[random.randint(0,14)] = random.randint(1,25)
-    return tuple(sorted(set(jogo)))[:15]
+    clusters={}
+    for i,(j,sc) in enumerate(jogos):
+        clusters.setdefault(labels[i], []).append((j,sc))
 
-def evoluir(pop):
-    nova=[]
-    for _ in range(len(pop)):
-        p1,p2 = random.sample(pop,2)
-        filho = crossover(p1,p2)
-        if random.random()<0.3:
-            filho = mutacao(filho)
-        nova.append(filho)
-    return nova
-
-# =============================
-# MONTE CARLO OTIMIZADO
-# =============================
-def monte_carlo(jogo, probs, n=10):
-    return sum(score(jogo,probs) for _ in range(n))/n
-
-# =============================
-# GERADOR AVANCADO (100 JOGOS)
-# =============================
-def gerar_avancado(qtd, probs):
-
-    pop = [tuple(sorted(random.sample(range(1,26),15))) for _ in range(3000)]
-
-    for _ in range(4):
-        pop = evoluir(pop)
-
-    avaliados = [(j, monte_carlo(j,probs)) for j in pop if j not in historico]
-    avaliados.sort(key=lambda x: x[1], reverse=True)
+    for c in clusters:
+        clusters[c].sort(key=lambda x: x[1], reverse=True)
 
     finais=[]
+    while len(finais)<qtd_final:
+        for c in clusters:
+            if clusters[c]:
+                finais.append(clusters[c].pop(0))
+            if len(finais)>=qtd_final:
+                break
 
-    for jogo,sc in avaliados:
-        if all(len(set(jogo)&set(j2)) < 13 for j2,_ in finais):
-            finais.append((jogo,sc))
+    return finais[:qtd_final]
 
-        if len(finais) >= qtd:
-            break
+def heatmap(probs):
+    grid = np.zeros((5,5))
+    for i,n in enumerate(range(1,26)):
+        grid[i//5][i%5] = probs[n]
+    return px.imshow(grid, text_auto=True)
 
-    usados = set(j for j,_ in finais)
+st.title("Lotofacil IA v0.5.1")
 
-    while len(finais) < qtd:
-        novo = tuple(sorted(random.sample(range(1,26),15)))
-        if novo not in historico and novo not in usados:
-            finais.append((novo, score(novo, probs)))
-            usados.add(novo)
+qtd = st.slider("Quantidade de jogos",1,100,10)
 
-    return finais
-
-# =============================
-# UI
-# =============================
-st.title("Lotofacil IA v0.3.3 - 100 Combinações")
-
-if st.checkbox("Mostrar dados carregados"):
-    st.dataframe(df.head())
-
-qtd = st.slider("Quantidade de jogos", 1, 100, 10)
-
-if st.button("Gerar IA Avancada"):
-
+if st.button("Gerar Jogos"):
     modelos = treinar()
     probs = probabilidades(modelos)
 
-    dfp = pd.DataFrame({
-        "Numero": list(probs.keys()),
-        "Probabilidade": list(probs.values())
-    })
-
-    st.plotly_chart(px.bar(dfp, x="Numero", y="Probabilidade",
-                           title="Probabilidade dos numeros"))
+    st.plotly_chart(heatmap(probs))
 
     with st.spinner("Gerando combinações..."):
-        jogos = gerar_avancado(qtd, probs)
+        jogos = gerar(qtd*5, probs)
+        jogos = clusterizar(jogos, qtd_final=qtd, k=10)
 
-    df_jogos = pd.DataFrame({
-        "Jogo": [i+1 for i in range(len(jogos))],
-        "Numeros": [list(j) for j,_ in jogos],
-        "Score": [round(sc,4) for _,sc in jogos]
+    dfj = pd.DataFrame({
+        "Jogo":[i+1 for i in range(len(jogos))],
+        "Numeros":[list(j) for j,_ in jogos],
+        "Score":[round(s,3) for _,s in jogos]
     })
 
-    st.dataframe(df_jogos, use_container_width=True)
+    st.dataframe(dfj, use_container_width=True)
