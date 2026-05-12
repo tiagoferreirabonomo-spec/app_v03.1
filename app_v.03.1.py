@@ -1,137 +1,363 @@
-# LOTOFACIL IA v0.5.1
+# =========================================================
+# LOTERIAS IA - CENTRAL
+# Mega-Sena + Lotofácil
+# =========================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import random
-import plotly.express as px
+
 from xgboost import XGBClassifier
-from sklearn.cluster import KMeans
 
-st.set_page_config(layout="wide")
+# =========================================================
+# CONFIG
+# =========================================================
 
-uploaded_file = st.file_uploader("Envie Lotofacil.xlsx", type=["xlsx"])
+st.set_page_config(
+    page_title="Loterias IA",
+    layout="wide"
+)
 
-if uploaded_file is None:
-    st.warning("Envie o arquivo para continuar")
-    st.stop()
+st.sidebar.title("🎯 Loterias IA")
 
-df = pd.read_excel(uploaded_file)
-bolas = df[[f"Bola{i}" for i in range(1,16)]]
+opcao = st.sidebar.radio(
+    "Escolha o sistema",
+    [
+        "Mega-Sena IA",
+        "Lotofácil IA"
+    ]
+)
 
-primos = {2,3,5,7,11,13,17,19,23}
-moldura = {1,2,3,4,5,6,10,11,15,16,20,21,22,23,24,25}
+# =========================================================
+# FUNÇÕES
+# =========================================================
 
-def features_jogo(jogo):
-    return {
-        "soma": sum(jogo),
-        "pares": sum(1 for n in jogo if n%2==0),
-        "primos": sum(1 for n in jogo if n in primos),
-        "mult3": sum(1 for n in jogo if n%3==0),
-        "moldura": sum(1 for n in jogo if n in moldura)
-    }
+def sequencias(jogo):
 
-def matriz():
-    m = pd.DataFrame(0, index=bolas.index, columns=range(1,26))
-    for i,row in bolas.iterrows():
-        for n in row:
-            m.at[i,n]=1
-    return m
+    jogo = sorted(jogo)
 
-mat = matriz()
+    seq = 1
+    max_seq = 1
 
-@st.cache_resource
-def treinar():
-    modelos={}
-    X = mat.shift(1).fillna(0)
-    for n in range(1,26):
-        model = XGBClassifier(eval_metric='logloss')
-        model.fit(X, mat[n])
-        modelos[n]=model
-    return modelos
+    for i in range(1, len(jogo)):
 
-def probabilidades(modelos):
-    ult = mat.iloc[-1].values.reshape(1,-1)
-    return {n:modelos[n].predict_proba(ult)[0][1] for n in range(1,26)}
+        if jogo[i] == jogo[i - 1] + 1:
+            seq += 1
+            max_seq = max(max_seq, seq)
 
-ultimo = set(bolas.iloc[-1].values)
+        else:
+            seq = 1
 
-def score(jogo, probs):
-    base = sum(probs[n] for n in jogo)
-    f = features_jogo(jogo)
-    bonus = 0
-    if 180 <= f["soma"] <= 220:
-        bonus += 1
-    if 6 <= f["pares"] <= 9:
-        bonus += 1
-    repet = len(set(jogo) & ultimo)
-    if 8 <= repet <= 10:
-        bonus += 2
-    return base + bonus
+    return max_seq
 
-historico = set(tuple(sorted(r)) for r in bolas.values)
+# =========================================================
+# MEGA-SENA
+# =========================================================
 
-def gerar(qtd, probs):
-    jogos=[]
-    usados=set()
-    while len(jogos)<qtd:
-        jogo = tuple(sorted(random.sample(range(1,26),15)))
-        if jogo in historico or jogo in usados:
-            continue
-        f = features_jogo(jogo)
-        if not (180 <= f["soma"] <= 220):
-            continue
-        jogos.append((jogo, score(jogo, probs)))
-        usados.add(jogo)
-    jogos.sort(key=lambda x: x[1], reverse=True)
-    return jogos
+if opcao == "Mega-Sena IA":
 
-def clusterizar(jogos, qtd_final, k=10):
-    X = [[1 if i in j else 0 for i in range(1,26)] for j,_ in jogos]
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    labels = kmeans.fit_predict(X)
+    st.title("🎯 Mega-Sena IA")
 
-    clusters={}
-    for i,(j,sc) in enumerate(jogos):
-        clusters.setdefault(labels[i], []).append((j,sc))
+    uploaded_file = st.file_uploader(
+        "Envie Mega-Sena.xlsx",
+        type=["xlsx"],
+        key="mega"
+    )
 
-    for c in clusters:
-        clusters[c].sort(key=lambda x: x[1], reverse=True)
+    if uploaded_file:
 
-    finais=[]
-    while len(finais)<qtd_final:
-        for c in clusters:
-            if clusters[c]:
-                finais.append(clusters[c].pop(0))
-            if len(finais)>=qtd_final:
-                break
+        df = pd.read_excel(uploaded_file)
 
-    return finais[:qtd_final]
+        bolas = df[[f"Bola{i}" for i in range(1, 7)]]
 
-def heatmap(probs):
-    grid = np.zeros((5,5))
-    for i,n in enumerate(range(1,26)):
-        grid[i//5][i%5] = probs[n]
-    return px.imshow(grid, text_auto=True)
+        primos = {
+            2,3,5,7,11,13,17,19,23,
+            29,31,37,41,43,47,53,59
+        }
 
-st.title("Lotofacil IA v0.5.1")
+        def features_jogo(jogo):
 
-qtd = st.slider("Quantidade de jogos",1,100,10)
+            return {
+                "soma": sum(jogo),
+                "pares": sum(1 for n in jogo if n % 2 == 0),
+                "primos": sum(1 for n in jogo if n in primos),
+                "sequencias": sequencias(jogo)
+            }
 
-if st.button("Gerar Jogos"):
-    modelos = treinar()
-    probs = probabilidades(modelos)
+        def matriz():
 
-    st.plotly_chart(heatmap(probs))
+            m = pd.DataFrame(
+                0,
+                index=bolas.index,
+                columns=range(1, 61)
+            )
 
-    with st.spinner("Gerando combinações..."):
-        jogos = gerar(qtd*5, probs)
-        jogos = clusterizar(jogos, qtd_final=qtd, k=10)
+            for i, row in bolas.iterrows():
 
-    dfj = pd.DataFrame({
-        "Jogo":[i+1 for i in range(len(jogos))],
-        "Numeros":[list(j) for j,_ in jogos],
-        "Score":[round(s,3) for _,s in jogos]
-    })
+                for n in row:
+                    m.at[i, n] = 1
 
-    st.dataframe(dfj, use_container_width=True)
+            return m
+
+        mat = matriz()
+
+        @st.cache_resource
+        def treinar():
+
+            modelos = {}
+
+            X = mat.shift(1).fillna(0)
+
+            for n in range(1, 61):
+
+                model = XGBClassifier(
+                    eval_metric='logloss'
+                )
+
+                model.fit(X, mat[n])
+
+                modelos[n] = model
+
+            return modelos
+
+        def probabilidades(modelos):
+
+            ult = mat.iloc[-1].values.reshape(1, -1)
+
+            return {
+                n: modelos[n].predict_proba(ult)[0][1]
+                for n in range(1, 61)
+            }
+
+        historico = set(
+            tuple(sorted(r))
+            for r in bolas.values
+        )
+
+        def gerar(qtd, probs):
+
+            jogos = []
+            usados = set()
+
+            while len(jogos) < qtd:
+
+                jogo = tuple(
+                    sorted(
+                        random.sample(range(1, 61), 6)
+                    )
+                )
+
+                if jogo in historico:
+                    continue
+
+                if jogo in usados:
+                    continue
+
+                f = features_jogo(jogo)
+
+                if not (120 <= f["soma"] <= 240):
+                    continue
+
+                score = sum(probs[n] for n in jogo)
+
+                jogos.append((jogo, score))
+                usados.add(jogo)
+
+            jogos.sort(
+                key=lambda x: x[1],
+                reverse=True
+            )
+
+            return jogos
+
+        qtd = st.sidebar.slider(
+            "Quantidade Mega-Sena",
+            1,
+            100,
+            5
+        )
+
+        if st.button("🚀 Gerar Mega-Sena"):
+
+            modelos = treinar()
+
+            probs = probabilidades(modelos)
+
+            jogos = gerar(qtd * 3, probs)
+
+            # =================================================
+            # CORREÇÃO
+            # =================================================
+            jogos = jogos[:qtd]
+
+            dfj = pd.DataFrame({
+
+                "Jogo":
+                    [i + 1 for i in range(len(jogos))],
+
+                "Números":
+                    [list(j) for j, _ in jogos],
+
+                "Score":
+                    [round(s, 4) for _, s in jogos]
+            })
+
+            st.dataframe(
+                dfj,
+                use_container_width=True
+            )
+
+# =========================================================
+# LOTOFÁCIL
+# =========================================================
+
+if opcao == "Lotofácil IA":
+
+    st.title("🚀 Lotofácil IA")
+
+    uploaded_file = st.file_uploader(
+        "Envie Lotofacil.xlsx",
+        type=["xlsx"],
+        key="lotofacil"
+    )
+
+    if uploaded_file:
+
+        df = pd.read_excel(uploaded_file)
+
+        bolas = df[[f"Bola{i}" for i in range(1, 16)]]
+
+        def features_jogo(jogo):
+
+            return {
+                "soma": sum(jogo),
+                "pares": sum(1 for n in jogo if n % 2 == 0),
+                "sequencias": sequencias(jogo)
+            }
+
+        def matriz():
+
+            m = pd.DataFrame(
+                0,
+                index=bolas.index,
+                columns=range(1, 26)
+            )
+
+            for i, row in bolas.iterrows():
+
+                for n in row:
+                    m.at[i, n] = 1
+
+            return m
+
+        mat = matriz()
+
+        @st.cache_resource
+        def treinar():
+
+            modelos = {}
+
+            X = mat.shift(1).fillna(0)
+
+            for n in range(1, 26):
+
+                model = XGBClassifier(
+                    eval_metric='logloss'
+                )
+
+                model.fit(X, mat[n])
+
+                modelos[n] = model
+
+            return modelos
+
+        def probabilidades(modelos):
+
+            ult = mat.iloc[-1].values.reshape(1, -1)
+
+            return {
+                n: modelos[n].predict_proba(ult)[0][1]
+                for n in range(1, 26)
+            }
+
+        historico = set(
+            tuple(sorted(r))
+            for r in bolas.values
+        )
+
+        def gerar(qtd, probs):
+
+            jogos = []
+            usados = set()
+
+            while len(jogos) < qtd:
+
+                jogo = tuple(
+                    sorted(
+                        random.sample(range(1, 26), 15)
+                    )
+                )
+
+                if jogo in historico:
+                    continue
+
+                if jogo in usados:
+                    continue
+
+                f = features_jogo(jogo)
+
+                if not (180 <= f["soma"] <= 220):
+                    continue
+
+                score = sum(probs[n] for n in jogo)
+
+                jogos.append((jogo, score))
+                usados.add(jogo)
+
+            jogos.sort(
+                key=lambda x: x[1],
+                reverse=True
+            )
+
+            return jogos
+
+        qtd = st.sidebar.slider(
+            "Quantidade Lotofácil",
+            1,
+            100,
+            5
+        )
+
+        if st.button("🚀 Gerar Lotofácil"):
+
+            modelos = treinar()
+
+            probs = probabilidades(modelos)
+
+            jogos = gerar(qtd * 3, probs)
+
+            # =================================================
+            # CORREÇÃO
+            # =================================================
+            jogos = jogos[:qtd]
+
+            dfj = pd.DataFrame({
+
+                "Jogo":
+                    [i + 1 for i in range(len(jogos))],
+
+                "Números":
+                    [list(j) for j, _ in jogos],
+
+                "Score":
+                    [round(s, 4) for _, s in jogos]
+            })
+
+            st.dataframe(
+                dfj,
+                use_container_width=True
+            )
+
+st.markdown("---")
+st.markdown("🎯 Loterias IA")
