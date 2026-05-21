@@ -15,11 +15,11 @@ from xgboost import XGBClassifier
 # =========================================================
 
 st.set_page_config(
-    page_title="Loterias IA",
+    page_title="Bono-Loterias IA",
     layout="wide"
 )
 
-st.sidebar.title("🎯 Loterias IA")
+st.sidebar.title("🎯 Bono-Loterias IA")
 
 opcao = st.sidebar.radio(
     "Escolha o sistema",
