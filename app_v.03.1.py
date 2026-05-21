@@ -15,17 +15,17 @@ from xgboost import XGBClassifier
 # =========================================================
 
 st.set_page_config(
-    page_title="Bono Loterias IA",
+    page_title="Loterias IA",
     layout="wide"
 )
 
-st.sidebar.title("🎯Bono Loterias IA")
+st.sidebar.title("🎯 Loterias IA")
 
 opcao = st.sidebar.radio(
     "Escolha o sistema",
     [
-        "Bono Mega-Sena IA",
-        "Bono Lotofácil IA"
+        "Mega-Sena IA",
+        "Lotofácil IA"
     ]
 )
 
@@ -360,4 +360,4 @@ if opcao == "Lotofácil IA":
             )
 
 st.markdown("---")
-st.markdown("🎯 Loterias IA")
+st.markdown("🎯 Loterias IA Corrigido")
