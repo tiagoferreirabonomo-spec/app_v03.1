@@ -19,7 +19,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.sidebar.title("🎯 Bono Loterias IA")
+st.sidebar.title("🎯Bono Loterias IA")
 
 opcao = st.sidebar.radio(
     "Escolha o sistema",
